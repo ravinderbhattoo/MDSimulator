@@ -2,3 +2,6 @@ name = "MDSimulator"
 uuid = "cadc6421-236b-4fea-8701-92531ff86392"
 authors = ["Ravinder Bhattoo <ravinderbhattoo@gmail.com>"]
 version = "0.1.0"
+
+[deps]
+DifferentialEquations = "0c46a032-eb83-5123-abaf-570d42b7fbaa"
