@@ -1,5 +1,13 @@
-abstract type PotentialParameters
-end
+using Unitful
+
+abstract type PotentialParameters end
+abstract type PairPotential <: PotentialParameters end
+abstract type _3BodyPotential <: PotentialParameters end
+abstract type _4BodyPotential <: PotentialParameters end
+abstract type NBodyPotential <: PotentialParameters end
+abstract type BondedPotential <: PotentialParameters end
+abstract type FieldPotentials <: PotentialParameters end
+
 
 # exports
 export potential_force, potential_energy, PotentialParameters
@@ -10,23 +18,25 @@ export potential_force, potential_energy, PotentialParameters
 
 export LennardJonesParameters
 
-struct LennardJonesParameters{pType <: Real} <: PotentialParameters
-    ϵ::pType
-    σ::pType
-    R::pType
-    exp1::pType
-    exp2::pType
-    equillibrium::pType
-    energy_shift::pType
+struct LennardJonesParameters{eType <: Number, lType <: Number, expType <: Real} <: PairPotential
+    ϵ::eType
+    σ::lType
+    R::lType
+    exp1::expType
+    exp2::expType
+    equillibrium::lType
+    energy_shift::eType
 end
 
-function LennardJonesParameters(ϵ::Real, σ::Real, R::Real, exp1::Real, exp2::Real)
+function LennardJonesParameters(ϵ::Number, σ::Number, R::Number, exp1::Number, exp2::Number)
     A = (σ/R)^exp1
     B = (σ/R)^exp2
-    LennardJonesParameters(ϵ, σ, R, exp1, exp2, σ/(exp2/exp1)^(1/(exp1-exp2)), (B-A)*4ϵ)
+    equi_dist = σ/(exp2/exp1)^(1/(exp1-exp2))
+    σ, R, equi_dist = uconvert.(unit(σ), promote(σ, R, equi_dist))
+    LennardJonesParameters(ϵ, σ, R, exp1, exp2, equi_dist, (B-A)*4ϵ)
 end
 
-function LennardJonesParameters(ϵ::Real, σ::Real, R::Real)
+function LennardJonesParameters(ϵ::Number, σ::Number, R::Number)
     LennardJonesParameters(ϵ, σ, R, 12.0, 6.0)
 end
 
@@ -42,21 +52,31 @@ function Base.show(stream::IO, pp::LennardJonesParameters)
     print(stream, "\tExponent_1:"); show(stream, pp.exp1); println(stream)
     print(stream, "\tExponent_2:"); show(stream, pp.exp2); println(stream)
     print(stream, "\tEquillibrium position:"); show(stream, pp.equillibrium); println(stream)
+    print(stream, "\tEnergy shift:"); show(stream, pp.energy_shift/pp.ϵ); print(stream, "×ϵ"); println(stream)
 end
 
 
-function potential_energy(r::Real, pot::LennardJonesParameters)
+function potential_energy(r::Number, pot::LennardJonesParameters)
+    if typeof(r)==typeof(pot.σ)
+        #
+    else
+        @warn "Using different units may cause slow code."
+    end
+
     if r<pot.R
         σ_r = pot.σ/r
-        A = (σ_r)^pot.exp1
-        B = (σ_r)^pot.exp2
-        return (A-B)*(4pot.ϵ) + pot.energy_shift
+        return ((σ_r)^pot.exp1-(σ_r)^pot.exp2)*(4pot.ϵ) + pot.energy_shift
     else
         return 0.0
     end
 end
 
-function potential_force(r::Real, pot::LennardJonesParameters)
+function potential_force(r::Number, pot::LennardJonesParameters)
+    if typeof(r)==typeof(pot.σ)
+        #
+    else
+        @warn "Using different units may cause slow code."
+    end
     if r<pot.R
         σ_r = pot.σ/r
         A = (σ_r)^pot.exp1
@@ -77,7 +97,7 @@ end
 
 export BuckinghamParameters
 
-struct BuckinghamParameters{pType <: Real} <: PotentialParameters
+struct BuckinghamParameters{pType <: Real} <: PairPotential
     A::pType
     B::pType
     C::pType

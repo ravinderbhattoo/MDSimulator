@@ -1,9 +1,12 @@
-# exports
 using DifferentialEquations
 using ParticlesTools
+using Unitful
+
+# exports
 export MDSim, simulate
 
 struct MDSim
+    units
     initial_condition
     mass
     interatomic_potentials
@@ -26,13 +29,18 @@ function MDSim(initial_condition, mass, interatomic_potentials, boundary_conditi
     elseif m_ids==nothing
         m_ids = copy(a_ids)
     end
-    MDSim(initial_condition, mass, interatomic_potentials, boundary_condition, a_ids, m_ids, Δτ, save_every, global_save_every, max_neighs, max_neighs_hard_set, reneighboring_every)
+
+    # Units
+    u_x, u_v = [unit(i[1]) for i in initial_condition]
+    units = (u_x=u_x, u_v=u_v, u_mass=unit(mass), u_f_interatomic_potentials=[unit(potential_force(1u_x)) for pot in interatomic_potentials])
+
+    MDSim(units, initial_condition, mass, interatomic_potentials, boundary_condition, a_ids, m_ids, Δτ, save_every, global_save_every, max_neighs, max_neighs_hard_set, reneighboring_every)
 end
 
 
 function MD_soode(v, u, p, t)
-    emvironment, ode_params, cb_params = p
-    dv = get_acceleration(u, ode_params)
+    emvironment, params = p
+    dv = get_acceleration(u, params)
     # for env in environment
     #     @. dv += ddu(env)
     # end
@@ -46,15 +54,15 @@ function simulate(Sim::MDSim, n::Int64, environment)
 
     cut_dist = maximum([pot.R for pot in Sim.interatomic_potentials])
 
-    neighs = find_neighbors(u0, cut_dist, Sim.max_neighs, hard_max=Sim.max_neighs_hard_set)
+    neighs = find_neighbors(u0, cut_dist, Sim.boundary_condition, Sim.max_neighs, hard_max=Sim.max_neighs_hard_set)
 
-    ode_params = (Sim.interatomic_potentials, Sim.a_ids, Sim.m_ids, Sim.mass, Sim.boundary_condition, neighs)
     nn = Int64(n/Sim.global_save_every)
     global_vals = [WellArray(nn), WellArray(nn), WellArray(nn)]
 
-    cb_params = (size(u0)[2], cut_dist, Sim.max_neighs, Sim.max_neighs_hard_set, Sim.reneighboring_every, Sim.global_save_every, global_vals)
 
-    p = (environment, ode_params, cb_params)
+    params = (interatomic_potentials=Sim.interatomic_potentials, a_ids=Sim.a_ids, m_ids=Sim.m_ids, mass=Sim.mass, boundary_condition=Sim.boundary_condition, neighs=neighs, uf=Sim.unit_factor, N=size(u0)[2], cut_dist=cut_dist, max_neighs=Sim.max_neighs, max_neighs_hard_set=Sim.max_neighs_hard_set, reneighboring_every=Sim.reneighboring_every, global_save_every=Sim.global_save_every, global_vals=global_vals)
+
+    p = (environment, params)
 
     soode(v, u, p, t) = MD_soode(v, u, p, t)
 
@@ -65,52 +73,51 @@ end
 
 
 function get_acceleration(u, params)
-    pots, a_ids, m_ids, mass, bc, neighs = params
     dv = zeros(size(u))
-    for pot in pots
-        dv += acceleration(u, pot, a_ids, m_ids, mass, bc, neighs)
+    for pot in params.interatomic_potentials
+        dv += params.uf*acceleration(u, pot, params.a_ids, params.m_ids, params.mass, params.boundary_condition, params.neighs)
     end
     dv
 end
 
-function acceleration(x, pot, a_ids, m_ids, mass, BC, neighs)
-    a = zeros(size(x))
-    for i in 1:size(x)[2]
-        for j in 1:size(neighs)[1]
-            if neighs[j,i]!=0
-                r, r2, dr = distance(x[:,i], x[:,neighs[j,i]], BC)
-                mag = potential_force(r, pot)/(mass[i]*r) # , a_ids[i], a_ids[neighs[j,i]], m_ids[i], m_ids[neighs[j,i]]
-                a[1,i] += dr[1]*mag
-                a[2,i] += dr[2]*mag
-                a[3,i] += dr[3]*mag
-            end
-        end
+
+function get_potential_energy(u, params)
+    e = 0.0
+    for pot in params.interatomic_potentials
+        e += potential_energy(u, pot, params.a_ids, params.m_ids, params.mass, params.boundary_condition, params.neighs)
     end
-    return a
+    e
 end
 
+
 function condition_f(u,t,integrator)
-    environment, ode_params, cb_params = integrator.p
-    N = cb_params[1]
+    environment, params = integrator.p
+    N = params.N
     v = reshape(Array(integrator.u),(3,:))[:,1:N]
     x = reshape(Array(integrator.u),(3,:))[:,N+1:end]
-    apply_simulation_bc!(x, v, ode_params[end-1])
+    apply_simulation_bc!(x, v, params.boundary_condition)
     integrator.u[:] = hcat(reshape(v,(1,:)),reshape(x,(1,:)))
     integrator.sol.u[end][:] = integrator.u[:]
-    if round(integrator.t/integrator.dt)%cb_params[6]==0
-        fillit!(cb_params[7][1], 0.5*sum(ode_params[4] .* sum(v.*v, dims=1)))
-        print("Time: $(Int(round(integrator.t/integrator.dt)))×Δτ \tKE: $(cb_params[7][1][end])\n")
+    if round(integrator.t/integrator.dt)%params.global_save_every==0
+        fillit!(params.global_vals[1], 0.5*sum(params.mass .* sum(v.*v, dims=1)))
+        fillit!(params.global_vals[3], get_potential_energy(x, params))
+        print("Time: $(Int(round(integrator.t/integrator.dt)))×Δτ \tKE: $(params.global_vals[1][end]) \tPE: $(params.global_vals[3][end]) \n")
     end
-    isapprox(round(integrator.t/integrator.dt)%cb_params[5],0.0)
+    isapprox(round(integrator.t/integrator.dt)%params.reneighboring_every,0.0)
 end
 
 function affect_f!(integrator)
-    N, cut_dist, max_neighs, max_neighs_hard_set, _ = integrator.p[end]
+    params = integrator.p[2]
+    N = params.N
     x = reshape(Array(integrator.u),(3,:))[:,N+1:end]
-    print("Time: $(Int(round(integrator.t/integrator.dt)))×Δτ \nReneighboring...")
-    neigh_mat = find_neighbors(x, cut_dist, max_neighs, hard_max = max_neighs_hard_set)
+    print("Time: $(Int(round(integrator.t/integrator.dt)))×Δτ \nReneighboring(cutoff = $(params.cut_dist))...")
+    neigh_mat = find_neighbors(x, params.cut_dist, params.boundary_condition, params.max_neighs, hard_max = params.max_neighs_hard_set)
     rows = size(neigh_mat)[1]
-    fill!(integrator.p[2][end], 0) # = zeros(size(integrator.p[2][end]))
-    integrator.p[2][end][1:rows,:] = neigh_mat
+    fill!(integrator.p[2].neighs, 0)
+    nrows = min(rows, size(integrator.p[2].neighs)[1])
+    if nrows < rows
+        print("Neighs has exceeded($rows) capacity($nrows)\n")
+    end
+    integrator.p[2].neighs[1:nrows,:] = neigh_mat[1:nrows,:]
     print("\tDone\n")
 end
