@@ -44,6 +44,10 @@ function LennardJonesParameters()
     LennardJonesParameters(1.0, 1.0, 2.5)
 end
 
+function Base.similar(lj::LennardJonesParameters, args)
+    LennardJonesParameters(args...)
+end
+
 function Base.show(stream::IO, pp::LennardJonesParameters)
     println(stream, "Lennard-Jones:")
     print(stream, "\tϵ:"); show(stream, pp.ϵ); println(stream)
@@ -57,7 +61,7 @@ end
 
 
 function potential_energy(r::Number, pot::LennardJonesParameters)
-    if typeof(r)==typeof(pot.σ)
+    if unit(r)==unit(pot.σ)
         #
     else
         @warn "Using different units may cause slow code."
@@ -72,7 +76,7 @@ function potential_energy(r::Number, pot::LennardJonesParameters)
 end
 
 function potential_force(r::Number, pot::LennardJonesParameters)
-    if typeof(r)==typeof(pot.σ)
+    if unit(r)==unit(pot.σ)
         #
     else
         @warn "Using different units may cause slow code."

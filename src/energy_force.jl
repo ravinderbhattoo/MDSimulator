@@ -24,8 +24,8 @@ end
 # energy function for PairPotentials
 function potential_energy(x, pot::PairPotential, a_ids, m_ids, mass, BC, neighs)
     e = 0
-    for i in 1:size(x)[2]
-        for j in 1:size(neighs)[1]
+    for i in 1:size(x, 2)
+        for j in 1:size(neighs, 1)
             if neighs[j,i]==0
                 break
             else
