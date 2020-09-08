@@ -1,5 +1,3 @@
-using Unitful
-
 #exports
 export UNITS, unit_factor, unit_convert, CONSTANTS
 
@@ -41,7 +39,8 @@ end
 
 struct _CONSTANTS
     kb
-    _CONSTANTS(;kb=8.3144598e-3u"kJ/K/mol") = new(kb)
+    Avogadro
+    _CONSTANTS(;kb=8.3144598e-3u"kJ/K/mol", Avogadro=6.02214e23u"1/mol") = new(kb, Avogadro)
 end
 
 CONSTANTS = _CONSTANTS()

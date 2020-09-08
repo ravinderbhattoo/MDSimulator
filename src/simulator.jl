@@ -1,9 +1,5 @@
-using DifferentialEquations
-using ParticlesTools
-using Unitful
-
 # exports
-export MDSim, simulate
+export MDSim, simulate, sim_init
 
 struct MDSim
     u0
@@ -45,7 +41,26 @@ function Base.show(stream::IO, sim::MDSim)
     println(stream, "<<<<<<<<<<< Simulation Parameters")
 end
 
+function sim_init(sim::MDSim; kwargs...)
+    args = []
+    k = keys(kwargs)
+    for f in fieldnames(typeof(sim))
+        if f in k
+            push!(args, kwargs[Symbol(f)])
+        else
+            push!(args, getproperty(sim,f))
+        end
+    end
+    MDSim(args...)
+end
 
+function sim_init(res::DiffEqBase.ODESolution, sim::MDSim)
+    data = Array(reshape(Array(res.u[end]),(3,:)))
+    N = Int(size(data, 2)/2)
+    v0 = data[:, 1:N]
+    u0 = data[:, N+1:end]
+    sim_init(sim, u0=u0, v0=v0)
+end
 
 function MDSim(u0, v0, mass, interatomic_potentials, boundary_condition; a_ids = nothing, m_ids = nothing, Δτ = 1.0UNITS.time, save_every = 1000, global_save_every = 100, max_neighs = 100, max_neighs_hard_set = 100, reneighboring_every = 100)
 
@@ -70,28 +85,22 @@ function MDSim(u0, v0, mass, interatomic_potentials, boundary_condition; a_ids =
 end
 
 
-function MD_soode(v, u, p, t)
-    emvironment, params = p
-    dv = get_acceleration(u, params)
-    # for env in environment
-    #     @. dv += ddu(env)
-    # end
-    return dv
-end
-
-function simulate(Sim::MDSim, n::Int64, environment; verbose::Bool=false)
+function simulate(Sim::MDSim, n::Int64, ensemble; verbose::Bool=false)
     Δτ = ustrip(Sim.Δτ)
     tspan = (0.0, n*Δτ)
 
     u0, v0 = 1*ustrip(Sim.u0), 1*ustrip(Sim.v0)
     apply_simulation_bc!(u0, v0, Sim.boundary_condition)
     mass = 1*ustrip(Sim.mass)
+    Temp = 1*ustrip(get_temperature(v0, mass))
 
-    cut_dist = ustrip(maximum([pot.R for pot in Sim.interatomic_potentials]))
+    cut_dist = ustrip(maximum([pot.R for pot in Sim.interatomic_potentials]))*1.1
+
+    print("Cutoff for reneighboring is set to be $(round(cut_dist*100)/100) $(UNITS.distance).\n\n")
 
     neighs = find_neighbors(u0, cut_dist, Sim.boundary_condition, Sim.max_neighs, hard_max=Sim.max_neighs_hard_set)
 
-    nn = Int64(n/Sim.global_save_every)
+    nn = Int64(n/Sim.global_save_every) + 1
     global_vals = [WellArray(nn, fill_with=0.0UNITS.energy), WellArray(nn, fill_with=0.0UNITS.temperature), WellArray(nn, fill_with=0.0UNITS.energy)]
 
     uf = unit_factor(UNITS.acceleration, UNITS.force/UNITS.mass)
@@ -103,23 +112,42 @@ function simulate(Sim::MDSim, n::Int64, environment; verbose::Bool=false)
 
     dofs = 3*size(u0, 2)
 
-    params = (interatomic_potentials=interatomic_potentials, a_ids=Sim.a_ids, m_ids=Sim.m_ids, mass=mass, boundary_condition=Sim.boundary_condition, neighs=neighs, uf=uf, N=size(u0, 2), cut_dist=cut_dist, max_neighs=Sim.max_neighs, max_neighs_hard_set=Sim.max_neighs_hard_set, reneighboring_every=Sim.reneighboring_every, global_save_every=Sim.global_save_every, global_vals=global_vals, verbose=verbose, dofs=dofs)
+    acceleration = zeros(size(u0)..., length(0.0Δτ:Sim.save_every*Δτ:n*Δτ))
 
-    p = (environment, params)
+    kb = 1*ustrip(CONSTANTS.kb)
+
+    params = (interatomic_potentials=interatomic_potentials, a_ids=Sim.a_ids, m_ids=Sim.m_ids, mass=mass, boundary_condition=Sim.boundary_condition, neighs=neighs, uf=uf, N=size(u0, 2), cut_dist=cut_dist, max_neighs=Sim.max_neighs, max_neighs_hard_set=Sim.max_neighs_hard_set, reneighboring_every=Sim.reneighboring_every, global_save_every=Sim.global_save_every, global_vals=global_vals, verbose=verbose, dofs=dofs, acc=acceleration, save_every=Sim.save_every, T=@MVector[Temp], nstep=@MVector[0], kb=kb)
+
+    fillit!(params.global_vals[1], unit_convert(UNITS.energy, get_kinetic_energy(v0, mass)UNITS.mass*UNITS.velocity^2))
+    fillit!(params.global_vals[2], unit_convert(UNITS.temperature, get_temperature(params.global_vals[1][end], params.dofs)))
+    fillit!(params.global_vals[3], get_potential_energy(u0, params)UNITS.energy)
+
+    p = (ensemble, params)
 
     soode(v, u, p, t) = MD_soode(v, u, p, t)
 
     prob = SecondOrderODEProblem(soode, v0, u0, tspan, p, callback=DiscreteCallback(condition_f, affect_f!, save_positions=(false,false)))
+
+    print("Time: 0×Δτ \tKE: $(params.global_vals[1][end]) \tPE: $(params.global_vals[3][end]) \tTemp: $(params.global_vals[2][end]) \n")
+
     solve(prob, VelocityVerlet(), dt=Δτ, saveat=0.0Δτ:Sim.save_every*Δτ:n*Δτ)
 end
 
+function MD_soode(v, u, p, t)
+    ensemble, params = p
+    dv = get_acceleration(u, params)
+    for ens in ensemble
+        ddu!(dv, v, u, params, t, ens)
+    end
+    return dv
+end
 
 function get_acceleration(u, params)
     dv = zeros(size(u))
     for pot in params.interatomic_potentials
-        dv += params.uf*acceleration(u, pot, params.a_ids, params.m_ids, params.mass, params.boundary_condition, params.neighs)
+        acceleration!(dv, u, pot, params.a_ids, params.m_ids, params.mass, params.boundary_condition, params.neighs)
     end
-    dv
+    dv *= params.uf
 end
 
 
@@ -133,19 +161,37 @@ end
 
 
 function condition_f(u,t,integrator)
-    environment, params = integrator.p
+    ensemble, params = integrator.p
+    params.nstep[1] += 1
     N = params.N
-    v = reshape(Array(integrator.u),(3,:))[:,1:N]
-    x = reshape(Array(integrator.u),(3,:))[:,N+1:end]
+    data = reshape(Array(integrator.u),(3,:))
+    data2 = Array(reshape(get_du(integrator),(3,:)))
+    v = data[:,1:N]
+    x = data[:,N+1:end]
     apply_simulation_bc!(x, v, params.boundary_condition)
-    integrator.u[:] = hcat(reshape(v,(1,:)),reshape(x,(1,:)))
-    integrator.sol.u[end][:] = integrator.u[:]
+
+    # save data
+    if round(integrator.t/integrator.dt)%params.save_every==0
+        n = Int(round(integrator.t/integrator.dt)/params.save_every)
+        params.acc[:,:,n] = data2[:,N+1:end]
+    end
     if round(integrator.t/integrator.dt)%params.global_save_every==0
         fillit!(params.global_vals[1], unit_convert(UNITS.energy, get_kinetic_energy(v, params.mass)UNITS.mass*UNITS.velocity^2))
         fillit!(params.global_vals[2], unit_convert(UNITS.temperature, get_temperature(params.global_vals[1][end], params.dofs)))
         fillit!(params.global_vals[3], get_potential_energy(x, params)UNITS.energy)
-        print("Time: $(Int(round(integrator.t/integrator.dt)))×Δτ \tKE: $(params.global_vals[1][end]) \tPE: $(params.global_vals[3][end]) \tTemp: $(params.global_vals[2][end]) \n")
+        thermo_print(integrator, params)
     end
+
+    # apply apply
+    params.T[1] = 1*ustrip(get_temperature(v, params.mass))
+    for ens in ensemble
+        apply!(v, u, params, t, ens)
+    end
+
+    # updating u and v
+    integrator.u[:] = hcat(reshape(v,(1,:)),reshape(x,(1,:)))
+    integrator.sol.u[end][:] = integrator.u[:]
+
     isapprox(round(integrator.t/integrator.dt)%params.reneighboring_every,0.0)
 end
 
@@ -153,16 +199,7 @@ function affect_f!(integrator)
     params = integrator.p[2]
     N = params.N
     x = reshape(Array(integrator.u),(3,:))[:,N+1:end]
-    print("Time: $(Int(round(integrator.t/integrator.dt)))×Δτ \nReneighboring(cutoff = $(params.cut_dist)$(UNITS.distance))...")
-    neigh_mat = find_neighbors(x, params.cut_dist, params.boundary_condition, params.max_neighs, hard_max = params.max_neighs_hard_set)
-    rows = size(neigh_mat)[1]
-    fill!(integrator.p[2].neighs, 0)
-    nrows = min(rows, size(integrator.p[2].neighs)[1])
-    if nrows < rows
-        print("Neighs has exceeded($rows) capacity($nrows)\n")
-    end
-    integrator.p[2].neighs[1:nrows,:] = neigh_mat[1:nrows,:]
-    print("\tDone\n")
+    reneighboring!(x, integrator, params)
 end
 
 
@@ -172,4 +209,16 @@ function copy_pot(pot)
         push!(args, ustrip(getproperty(pot,f)))
     end
     similar(pot, args)
+end
+
+
+function reneighboring!(x, integrator, params)
+    neigh_mat = find_neighbors(x, params.cut_dist, params.boundary_condition, params.max_neighs, hard_max = params.max_neighs_hard_set)
+    rows = size(neigh_mat, 1)
+    fill!(integrator.p[2].neighs, 0)
+    nrows = min(rows, size(integrator.p[2].neighs)[1])
+    if nrows < rows
+        print("Neighs has exceeded($rows) capacity($nrows)\n")
+    end
+    integrator.p[2].neighs[1:nrows,:] = neigh_mat[1:nrows,:]
 end
