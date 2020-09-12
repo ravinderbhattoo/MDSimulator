@@ -1,61 +1,59 @@
 using Flux
-using JLD2
-using DifferentialEquations
-using MDSimulator
+using DelimitedFiles
+using Statistics
 
-res = load("./output/result1.jld2")["res"]
-
-function load_data(res; frames=nothing)
+function load_data(folder)
+    files = readdir(folder)
     xs = []
     ys = []
-    if frames==nothing
-        u = res["u"]
-        acc = res["acceleration"]
-    else
-        u = res["u"][frames]
-        acc = res["acceleration"][frames]
-    end
-    for item in u[1:end-1]
-        data = Array(reshape(Array(item),(3,:)))'
-        N = Int(size(data, 1)/2)
-        v = data[1:N,:]
-        x = data[N+1:end,:]
+    for item in files
+        data = readdlm("$folder$(item)", skipstart=2)
+        x = data[:,3:5]
+        v = data[:,6:8]
+        a = data[:,9:11]
         push!(xs, hcat(x, v)')
-    end
-    for i in 1:size(acc,3)-1
-        push!(ys, acc[:,:,i])
+        push!(ys, a')
     end
     xs, ys
 end
 
-xs, ys = load_data(res)
+folder = "./output/ovito/LJ_system_ovito_files/"
+xs, ys = load_data(folder)
 
-train_loader = Flux.Data.DataLoader((xs, ys), batchsize=2, shuffle=true)
+train_loader = Flux.Data.DataLoader((xs, ys), batchsize=10, shuffle=true)
 
 
 train_loader =  Flux.Data.DataLoader((xs, ys), batchsize=1)
 
-for epoch in 1:100
-    for (x, y) in train_loader
-        print(x)
-        @assert size(x) == (10, 2)
-        @assert size(y) == (2,)
+function zeroit(m)
+    for l in m.layers
+        l.W .*= 0.0
+        l.b .*= 0.0
     end
 end
 
+m1 = Chain(Dense(3, 3, relu), Dense(3, 3, relu))
+m2 = Chain(Dense(3, 3, relu), Dense(3, 3, relu))
+m3 = Chain(Dense(3, 3, relu), Dense(3, 3))
 
-m = Chain(Dense(6, 15, relu), Dense(15, 14, relu), Dense(14, 3))
+f(x) = 0.1m1(x[1:3,:]) #+ 0m2(x[4:6,:])
 
-ps = Flux.params(m)
+model = Chain(f, m3)
 
-loss_f(x, y) = sum((m(x).-y).^2)
+ps = Flux.params(model)
 
-loss_full() = sum([loss_f(x, y) for (x,y) in zip(xs,ys)])
+loss_f(x, y) = mean((model(x).-y).^2)
+
+loss_full() = mean([loss_f(x, y) for (x,y) in zip(xs,ys)])
 
 opt = ADAM(0.01, (0.9, 0.8))
 
+# opt = Flux.Optimise.AMSGrad()
+
 using IterTools: ncycle
-Flux.train!(loss_f, ps, ncycle([(x,y) for (x,y) in zip(xs,ys)], 10), opt, cb = Flux.throttle(()->(@show loss_full()), 3))
+Flux.train!(loss_f, ps, ncycle([(x,y) for (x,y) in zip(xs,ys)], 100), opt, cb = Flux.throttle(()->(@show loss_full()), 3))
+
+
 
 
 #
