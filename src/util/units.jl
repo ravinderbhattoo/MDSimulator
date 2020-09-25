@@ -26,8 +26,6 @@ function unit_factor(x::Unitful.Units, y::Unitful.Units)
 end
 
 Unitful.unit(M::Array{T, N}) where {T, N} = unit(T)
-
-Unitful.ustrip(M::WellArray{T}) where {T} = [ustrip(i) for i in M]
 Unitful.ustrip(M::Array{T, N}) where {T, N} = reshape([ustrip(i) for i in M],size(M))
 
 function check_units(a::Any, b::Unitful.Units; name1 = "A", name2 = "B")

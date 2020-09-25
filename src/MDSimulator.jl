@@ -6,8 +6,6 @@ using Reexport
 @reexport using StaticArrays
 @reexport using Unitful
 
-using ParticlesTools: find_neighbors, find_neighbors!
-
 abstract type CallBackType end
 abstract type EoMType end
 

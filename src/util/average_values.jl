@@ -24,7 +24,7 @@ function get_kinetic_energy(v::Array{T1, 2}, m::Array{T2, 1}) where {T1, T2}
 end
 
 function summary_(res)
-    KE, temp, PE = res.prob.p[2].global_vals
+    KE, temp, PE = res.prob.p.params.S.others.thermo_vals
     return KE, temp, PE
 end
 

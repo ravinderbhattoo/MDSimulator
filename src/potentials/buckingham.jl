@@ -1,5 +1,5 @@
 # exports
-export potential_force, potential_energy, PotentialParameters
+export potential_force, potential_energy
 
 ######################################################
 # Buckingham Potential                               #
