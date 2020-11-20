@@ -25,6 +25,14 @@ function unit_factor(x::Unitful.Units, y::Unitful.Units)
     return Float64(b/a)
 end
 
+function Unitful.uconvert(u::Unitful.Units, a::Array{Quantity{T,D,U},N}) where {T, D, U, N}
+    b = similar(a)
+    for i in 1:length(a)
+        b[i] = Unitful.uconvert(u, a[i])
+    end
+    b
+end
+
 Unitful.unit(M::Array{T, N}) where {T, N} = unit(T)
 Unitful.ustrip(M::Array{T, N}) where {T, N} = reshape([ustrip(i) for i in M],size(M))
 

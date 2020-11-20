@@ -7,9 +7,10 @@ include("./ML.jl")
 function copy_pot(pot)
     args = []
     for f in fieldnames(typeof(pot))
-        push!(args, ustrip(getproperty(pot,f)))
+        push!(args, 1ustrip(getproperty(pot,f)))
     end
     similar(pot, args)
 end
 
-copy_pot(pot::MLPotential) = pot
+copy_pot(pot::T) where T <: Union{MLPotential,Zygote.Params} = pot
+copy_pot(pot::Dummy) = pot

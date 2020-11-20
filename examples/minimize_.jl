@@ -5,10 +5,10 @@ using ParticlesMesh
 # Setup
 T = 100.0u"K"
 m = 39.95u"g/mol"
-L = uconvert(UNITS.distance, 100u"Å")
+L = uconvert(UNITS.distance, 10u"Å")
 Δτ = 1.0u"fs"
 N = 1000
-n = 10
+n = 3
 
 u0 = L*rectangular([1/n, 1/n, 1/n],[n, n, n])
 u0 += L/100*randn(size(u0))
@@ -29,13 +29,11 @@ sim = MDSim(u0, v0, mass, interatomic_potentials, boundary_condition, true; Δτ
 # Define ensemble for simulation
 ensemble = [NVE()]
 
-# Simulate for n number of steps
-sol, parameters = simulate(10000, sim, ensemble, verbose=true)
+parameters = MDSimulator.exe_at_start(sim, 1, true)
+println("Minimum PE: ", get_potential_energy(sim.v0, sim.u0, parameters, sim))
 
-# Plots
-display(plot_energy(sol, parameters))
-display(plot_temperature(sol, parameters))
-display(plot_momentum(sol, parameters))
+# Minimize energy
+sim = minimize(sim)
 
-# Write trajectory
-# write_trajectory_xyz("./output/ovito/LJ_system", data, parameters, overwrite=true)
+parameters = MDSimulator.exe_at_start(sim, 1, true)
+print("Minimum PE: ", get_potential_energy(sim.v0,sim.u0, parameters, sim))

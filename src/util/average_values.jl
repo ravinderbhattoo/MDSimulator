@@ -20,26 +20,23 @@ function maxwell_boltzmann_velocity(N, T, m)
 end
 
 function get_kinetic_energy(v::Array{T1, 2}, m::Array{T2, 1}) where {T1, T2}
-    return 0.5*sum(m.*sum(v.^2, dims=1)')
+    return 0.5*sum((v^2)*m)
 end
 
-function summary_(res)
-    KE, temp, PE = res.prob.p.params.S.others.thermo_vals
+function summary_(params)
+    KE, temp, PE = params.S.others.thermo_vals
     return KE, temp, PE
 end
 
 
-function get_momentum(res, t)
-    data = 1*reshape(res(t),(3,:))
-    N = res.prob.p[2].N
-    v = data[:,1:N]
-    v*res.prob.p[2].mass
+function get_momentum(res, t, params)
+    res(t).x[1]*params.S.sim.mass
 end
 
-function get_momentum_all(res)
+function get_momentum_all(res, params)
     p = zeros(3,length(res.t))
     for (ind, t) in enumerate(res.t)
-        p[:,ind] = get_momentum(res, t)
+        p[:,ind] = get_momentum(res, t, params)
     end
     return p
 end

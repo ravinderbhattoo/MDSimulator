@@ -1,4 +1,5 @@
 # exports
+export minimize
 
 function Base.show(stream::IO, sim::T) where T <: MDSim
     println(stream, ">>>>>>>>>>> Simulation Parameters")
@@ -39,43 +40,60 @@ function MDSim(u0, v0, mass, interatomic_potentials, boundary_condition, verify_
         check_units(Δτ, UNITS.time)
 
         for pot in interatomic_potentials
-            check_units(potential_energy(0.1UNITS.distance, pot), UNITS.energy)
-            check_units(potential_force(0.1UNITS.distance, pot), UNITS.force)
+            check_units(1energy_unit(pot), UNITS.energy)
+            check_units(1force_unit(pot), UNITS.force)
         end
     end
 
     # >> remove units
-    interatomic_potentials_ = [copy_pot(pot) for pot in interatomic_potentials]
+    interatomic_potentials = [copy_pot(pot) for pot in interatomic_potentials]
     u0, v0, mass, Δτ = [1ustrip(i) for i in [u0, v0, mass, Δτ]]
-
     # << remove units
+
     others = NeighParams(max_neighs, max_neighs_hard_set, reneighboring_every)
 
-    print(typeof(interatomic_potentials_[1]))
-
-    MDSim(u0, v0, mass, interatomic_potentials_, boundary_condition; a_ids = a_ids, m_ids = m_ids, Δτ = Δτ, save_every = save_every, thermo_save_every = thermo_save_every, others=others)
+    MDSim(u0, v0, mass, interatomic_potentials, boundary_condition; a_ids = a_ids, m_ids = m_ids, Δτ = Δτ, save_every = save_every, thermo_save_every = thermo_save_every, others=others)
 end
 
-function simulate(sim::MDSim, n::Int64, ensemble::Array{<:Ensemble, 1}; verbose::Bool=false)
+function problem(sim::MDSim, n::Int64, ensemble::Array{<:Ensemble, 1}; callbacks::Array{Function,1}=Function[], verbose::Bool=false)
     tspan = (0.0*sim.Δτ, n*sim.Δτ)
     params = exe_at_start(sim, n, verbose)
     print_thermo_at_start(params, sim, verbose)
-    p = MDBase.IntgParams(ensemble, params)
-    prob = MDBase.SecondOrderODEProblem(MDBase.SOODE, sim.v0, sim.u0, tspan, p, callback=mdcallbackset((cb_savethermo, cb_reneighboring)))
-    MDBase.solve(prob, MDBase.VelocityVerlet(), dt=sim.Δτ, saveat=tspan[1]:sim.save_every*sim.Δτ:tspan[2])
+
+    function SOODE(dv, v, u, p, t)
+        fill!(dv, 0.0)
+        set_acceleration!(dv, v, u, params, sim)
+        for ens in ensemble
+            ddu!(dv, v, u, params, t, ens)
+        end
+    end
+    cbs = [i(params, ensemble) for i in callbacks]
+    p = Float64[]
+    prob = MDBase.SecondOrderODEProblem(SOODE, sim.v0, sim.u0, tspan, p, callback=    mdcallbackset(params, ensemble, cbs))
+    return prob, sim.Δτ, tspan[1]:sim.save_every*sim.Δτ:tspan[2], params
+end
+
+function simulate(n::Int64, sim::MDSim, ensemble::Array{<:Ensemble, 1}; callbacks=Function[], verbose::Bool=false, kwargs...)
+    prob, dt, saveat, params = MDSimulator.problem(sim, n, ensemble, callbacks=callbacks, verbose=verbose)
+    sol = MDBase.solve(prob, MDBase.VelocityVerlet(), dt=sim.Δτ, saveat=saveat, kwargs...)
+    params.M.step = 0
+    return sol, params
+end
+
+function minimize(sim::MDSim; kwargs...)
+    println("Minimizing...")
+    parameters = exe_at_start(sim, 1, true)
+    loss = (x) -> get_potential_energy(zeros(size(x)...), x, parameters, sim)
+    res = optimize(loss, sim.u0, LBFGS(), kwargs...)
+    sim.u0 .= res.minimizer
+    return sim
 end
 
 
-
-function MDBase.integrator(sim::MDSim, n::Int64, ensemble::Array{<:Ensemble, 1}; verbose::Bool=false)
-    tspan = (0.0*sim.Δτ, n*sim.Δτ)
-    params = exe_at_start(sim, n, verbose)
-    print_thermo_at_start(params, sim, verbose)
-    p = MDBase.IntgParams(ensemble, params)
-    prob = MDBase.SecondOrderODEProblem(MDBase.SOODE, sim.v0, sim.u0, tspan, p, callback=mdcallbackset((cb_savethermo, cb_reneighboring)))
-    MDBase.init(prob, MDBase.VelocityVerlet(), dt=sim.Δτ)
+function MDBase.integrator(sim::MDSim, n::Int64, ensemble::Array{<:Ensemble, 1}; cbs=Function[], verbose::Bool=false)
+    prob, dt, saveat, params = problem(sim, n, ensemble, callbacks=cbs, verbose=verbose)
+    return MDBase.init(prob, MDBase.VelocityVerlet(), dt=dt), params
 end
-
 
 struct Neighbours{F <: FloatType, I <: IntType} <: AbstractMDParams
     neighs::Array{I, 2}
@@ -99,7 +117,7 @@ function exe_at_start(sim::MDSim, n::Types.I, verbose::Bool)
     vz = @view sim.v0[3, :]
     apply_simulation_bc!(ux, uy, uz, vx, vy, vz, sim.boundary_condition)
 
-    cut_dist = maximum([cutoff(pot) for pot in sim.interatomic_potentials])*1.1
+    cut_dist = ustrip(maximum([cutoff(pot) for pot in sim.interatomic_potentials])*1.1)
 
     if !(isapprox(cut_dist, 0.0))
         if verbose
@@ -107,7 +125,7 @@ function exe_at_start(sim::MDSim, n::Types.I, verbose::Bool)
         end
         neighs = find_neighbors(sim.u0, cut_dist, sim.boundary_condition, sim.others.max_neighs, hard_max=sim.others.max_neighs_hard_set)
     else
-        neighs = nothing
+        neighs = zeros(Int64, (0,0))
     end
 
     nn = fld(n, sim.thermo_save_every) + 1
@@ -116,7 +134,8 @@ function exe_at_start(sim::MDSim, n::Types.I, verbose::Bool)
     others = Neighbours(neighs, cut_dist, thermo_vals)
 
     N = Types.I(size(sim.u0, 2))
-    acc = zeros(Types.F, (size(sim.u0)..., n+1))
+    mm = fld(n, sim.save_every) + 1
+    acc = zeros(Types.F, (size(sim.u0)..., mm))
     mf_acc = unit_factor(UNITS.acceleration, UNITS.force/UNITS.mass)
     kb = 1ustrip(CONSTANTS.kb)
 
@@ -132,8 +151,13 @@ function exe_at_start(sim::MDSim, n::Types.I, verbose::Bool)
 end
 
 function print_thermo_at_start(params, sim::MDSim, verbose::Bool)
-    params.S.others.thermo_vals[3][1] = get_potential_energy(sim.u0, params, sim)
+    params.S.others.thermo_vals[3][1] = get_potential_energy(sim.v0, sim.u0, params, sim)
     if verbose
-        println("Time: 1×Δτ\tKE: ", params.S.others.thermo_vals[1][1], "\tTemp: ", params.S.others.thermo_vals[2][1], "\tPE: ", params.S.others.thermo_vals[3][1])
+        pe = params.S.others.thermo_vals[3][1]
+        ke = params.S.others.thermo_vals[1][1]
+        T = params.S.others.thermo_vals[2][1]
+        te = ke+pe
+        sig = 4
+        println("Time: 1×Δτ\tKE: ", round(ke, sigdigits=sig), "\tTemp: ", round(T, sigdigits=sig), "\tPE: ", round(pe, sigdigits=sig), "\tTE: ", round(te, sigdigits=sig))
     end
 end

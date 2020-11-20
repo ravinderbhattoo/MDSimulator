@@ -1,10 +1,12 @@
 module MDSimulator
 
 using Reexport
+using Zygote
 
 @reexport using MDBase
 @reexport using StaticArrays
 @reexport using Unitful
+@reexport using Optim
 
 abstract type CallBackType end
 abstract type EoMType end

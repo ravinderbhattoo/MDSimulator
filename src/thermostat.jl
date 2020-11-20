@@ -5,8 +5,8 @@ export CThermostat, EThermostat
 export NoseHooverThermostat, AndersenThermostat
 export ddu, ddu!, apply!
 
-abstract type CThermostat <: CallBackType end
-abstract type EThermostat <: EoMType end
+abstract type CThermostat <: MDBase.CallBackType end
+abstract type EThermostat <: MDBase.EoMType end
 
 #######################################################
 # >>>>>>> Andersen thermostat                         #
@@ -27,9 +27,9 @@ function Base.show(stream::IO, thermo::AndersenThermostat)
     println(stream, "  ncycle: $(thermo.ncycle) steps")
 end
 
-@inline function apply!(v, u, params, t, thermo::AndersenThermostat)
-    if params.nstep[1]%thermo.ncycle==0 || params.nstep[1]==1
-        v .*= sqrt(thermo.T₀/params.T[1])
+@inline function MDBase.apply!(v, u, params, t, thermo::AndersenThermostat)
+    if params.M.step%thermo.ncycle==0 || params.M.step==1
+        v .*= sqrt(thermo.T₀/params.M.Temperature)
     end
 end
 
@@ -53,44 +53,13 @@ function Base.show(stream::IO, thermo::MAndersenThermostat)
     println(stream, "  ncycle: $(thermo.ncycle) steps")
 end
 
-@inline function apply!(v, u, params, t, thermo::MAndersenThermostat)
-    if params.nstep[1]%thermo.ncycle==0 || params.nstep[1]==1
-        v .*= sqrt((thermo.T₁ + min(thermo.width,thermo.counter)/thermo.width*(thermo.T₂ - thermo.T₁))/params.T[1])
+@inline function MDBase.apply!(v, u, params, t, thermo::MAndersenThermostat)
+    if params.M.step%thermo.ncycle==0 || params.M.step==1
+        v .*= sqrt((thermo.T₁ + min(thermo.width,thermo.counter)/thermo.width*(thermo.T₂ - thermo.T₁))/params.M.Teperature)
         thermo.counter += thermo.ncycle
     end
 end
 
 #######################################################
 # <<<<<<< Andersen thermostat                         #
-#######################################################
-
-#######################################################
-# >>>>>>> Nosé-Hoover thermostat                      #
-#######################################################
-
-# http://www.sklogwiki.org/SklogWiki/index.php/Nos%C3%A9-Hoover_thermostat
-
-mutable struct NoseHooverThermostat <: EThermostat
-    Q::Real # dimension of energy×(time)²
-    X::Int64 # dofs
-    ζ::Real # friction
-    T0::Real # temperature
-end
-
-function NoseHooverThermostat()
-    NoseHooverThermostat(1,216*3,1,300)
-end
-
-@inline function ddu(v, u, params, t, Obj::NoseHooverThermostat)
-    dζ = (sum(params.mass.*sum(v.^2, dims=1)') .- (Obj.X+1)*params.kb*Obj.T0 )/Obj.Q
-    Obj.ζ += dζ
-    return -Obj.ζ.*v
-end
-
-@inline function ddu!(dv, args...)
-    dv .+= ddu(args...)
-end
-
-#######################################################
-# <<<<<<< Nosé-Hoover thermostat                      #
 #######################################################
