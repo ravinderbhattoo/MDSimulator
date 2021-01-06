@@ -47,6 +47,7 @@ function MDSim(u0, v0, mass, interatomic_potentials, boundary_condition, verify_
 
     # >> remove units
     interatomic_potentials = [copy_pot(pot) for pot in interatomic_potentials]
+
     u0, v0, mass, Δτ = [1ustrip(i) for i in [u0, v0, mass, Δτ]]
     # << remove units
 
@@ -55,17 +56,18 @@ function MDSim(u0, v0, mass, interatomic_potentials, boundary_condition, verify_
     MDSim(u0, v0, mass, interatomic_potentials, boundary_condition; a_ids = a_ids, m_ids = m_ids, Δτ = Δτ, save_every = save_every, thermo_save_every = thermo_save_every, others=others)
 end
 
-function problem(sim::MDSim, n::Int64, ensemble::Array{<:Ensemble, 1}; callbacks::Array{Function,1}=Function[], verbose::Bool=false)
+function problem(n::Int64, sim::MDSim, ensemble::Array{<:Ensemble, 1}; callbacks::Array{Function,1}=Function[], verbose::Bool=false)
     tspan = (0.0*sim.Δτ, n*sim.Δτ)
-    params = exe_at_start(sim, n, verbose)
+    params = exe_at_start(n, sim, verbose)
     print_thermo_at_start(params, sim, verbose)
 
     function SOODE(dv, v, u, p, t)
         fill!(dv, 0.0)
-        set_acceleration!(dv, v, u, params, sim)
+        set_acceleration!(dv, v, u, params)
         for ens in ensemble
             ddu!(dv, v, u, params, t, ens)
         end
+        dv .*= params.S.mf_acc
     end
     cbs = [i(params, ensemble) for i in callbacks]
     p = Float64[]
@@ -74,7 +76,7 @@ function problem(sim::MDSim, n::Int64, ensemble::Array{<:Ensemble, 1}; callbacks
 end
 
 function simulate(n::Int64, sim::MDSim, ensemble::Array{<:Ensemble, 1}; callbacks=Function[], verbose::Bool=false, kwargs...)
-    prob, dt, saveat, params = MDSimulator.problem(sim, n, ensemble, callbacks=callbacks, verbose=verbose)
+    prob, dt, saveat, params = MDSimulator.problem(n, sim, ensemble, callbacks=callbacks, verbose=verbose)
     sol = MDBase.solve(prob, MDBase.VelocityVerlet(), dt=sim.Δτ, saveat=saveat, kwargs...)
     params.M.step = 0
     return sol, params
@@ -82,7 +84,7 @@ end
 
 function minimize(sim::MDSim; kwargs...)
     println("Minimizing...")
-    parameters = exe_at_start(sim, 1, true)
+    parameters = exe_at_start(1, sim, true)
     loss = (x) -> get_potential_energy(zeros(size(x)...), x, parameters, sim)
     res = optimize(loss, sim.u0, LBFGS(), kwargs...)
     sim.u0 .= res.minimizer
@@ -90,8 +92,8 @@ function minimize(sim::MDSim; kwargs...)
 end
 
 
-function MDBase.integrator(sim::MDSim, n::Int64, ensemble::Array{<:Ensemble, 1}; cbs=Function[], verbose::Bool=false)
-    prob, dt, saveat, params = problem(sim, n, ensemble, callbacks=cbs, verbose=verbose)
+function MDBase.integrator(n::Int64, sim::MDSim, ensemble::Array{<:Ensemble, 1}; cbs=Function[], verbose::Bool=false)
+    prob, dt, saveat, params = problem(n, sim, ensemble, callbacks=cbs, verbose=verbose)
     return MDBase.init(prob, MDBase.VelocityVerlet(), dt=dt), params
 end
 
@@ -101,14 +103,14 @@ struct Neighbours{F <: FloatType, I <: IntType} <: AbstractMDParams
     thermo_vals::Array{Array{F,1} ,1}
 end
 
-struct StaticParams{SimObj <: AbstractSimObj, I <: IntType, F <: FloatType} <: AbstractMDParams
+struct StaticParams{I <: IntType, SimObj <: AbstractSimObj, F <: FloatType} <: AbstractMDParams
     @SParams_generic_fields
     others::Neighbours
     verbose::Bool
 end
 
 
-function exe_at_start(sim::MDSim, n::Types.I, verbose::Bool)
+function exe_at_start(n::Types.I, sim::MDSim, verbose::Bool)
     ux = @view sim.u0[1, :]
     uy = @view sim.u0[2, :]
     uz = @view sim.u0[3, :]
@@ -117,7 +119,7 @@ function exe_at_start(sim::MDSim, n::Types.I, verbose::Bool)
     vz = @view sim.v0[3, :]
     apply_simulation_bc!(ux, uy, uz, vx, vy, vz, sim.boundary_condition)
 
-    cut_dist = ustrip(maximum([cutoff(pot) for pot in sim.interatomic_potentials])*1.1)
+    cut_dist = ustrip(maximum([cutoff(pot) for pots in sim.interatomic_potentials for pot in pots])*1.1)
 
     if !(isapprox(cut_dist, 0.0))
         if verbose
@@ -140,7 +142,7 @@ function exe_at_start(sim::MDSim, n::Types.I, verbose::Bool)
     kb = 1ustrip(CONSTANTS.kb)
 
 
-    S = StaticParams(sim, N, kb, mf_acc, acc, others, verbose)
+    S = StaticParams(N, sim, kb, mf_acc, acc, others, verbose)
     M = MParams(Types.I(0), Types.F(0), Types.F(0),)
 
     M.ke = 0.5sum( @. sim.mass*(vx^2 + vy^2 + vz^2) )
@@ -151,7 +153,7 @@ function exe_at_start(sim::MDSim, n::Types.I, verbose::Bool)
 end
 
 function print_thermo_at_start(params, sim::MDSim, verbose::Bool)
-    params.S.others.thermo_vals[3][1] = get_potential_energy(sim.v0, sim.u0, params, sim)
+    params.S.others.thermo_vals[3][1] = get_potential_energy(sim.v0, sim.u0, params)
     if verbose
         pe = params.S.others.thermo_vals[3][1]
         ke = params.S.others.thermo_vals[1][1]

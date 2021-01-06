@@ -1,7 +1,6 @@
 module MDSimulator
 
 using Reexport
-using Zygote
 
 @reexport using MDBase
 @reexport using StaticArrays
@@ -11,6 +10,7 @@ using Zygote
 abstract type CallBackType end
 abstract type EoMType end
 
+include("util/types.jl")
 include("util/units.jl")
 include("util/average_values.jl")
 

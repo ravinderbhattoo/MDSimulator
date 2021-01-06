@@ -1,4 +1,5 @@
 using Plots
+using Statistics
 
 #exports
 export plot_temperature, plot_energy, plot_momentum
@@ -53,6 +54,16 @@ function plot_temperature(res::MDBase.ODESolution, params)
     KE, temp, PE = summary_(params)
     N = length(KE)
     fig = plot(res.t[1]:res.t[end]/(N-1):res.t[end], [ustrip(i) for i in temp], label="Temperature")
+    xlabel!( "Time ($(UNITS.time))")
+    ylabel!( "Temperature ($(UNITS.temperature))")
+    fig
+end
+
+function plot_temperature(res::MDBase.ODESolution, params, window)
+    rw = convert(Int64, floor(window/2))
+    KE, temp, PE = summary_(params)
+    N = length(KE)
+    fig = plot(res.t[1]:res.t[end]/(N-1):res.t[end], [ustrip(mean(temp[max(i-rw,1):min(i+rw,N)])) for i in 1:N], label="Temperature")
     xlabel!( "Time ($(UNITS.time))")
     ylabel!( "Temperature ($(UNITS.temperature))")
     fig

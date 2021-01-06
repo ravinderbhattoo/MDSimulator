@@ -20,7 +20,7 @@ function maxwell_boltzmann_velocity(N, T, m)
 end
 
 function get_kinetic_energy(v::Array{T1, 2}, m::Array{T2, 1}) where {T1, T2}
-    return 0.5*sum((v^2)*m)
+    return 0.5*sum((v.^2)*m)
 end
 
 function summary_(params)

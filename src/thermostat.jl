@@ -63,3 +63,42 @@ end
 #######################################################
 # <<<<<<< Andersen thermostat                         #
 #######################################################
+
+#######################################################
+# >>>>>>> NoseHoover thermostat                         #
+#######################################################
+
+mutable struct NoseHooverThermostat{T1<:Real, T2<:Real} <: EThermostat
+    T0::T1 # Equilibrium temperature
+    Q::T2 #
+    ζ::T2
+end
+
+function NoseHooverThermostat(temperature::Real, v::Array{T,2}, m::Array{T,1}; coupling=100) where T
+    T1 = ustrip(get_temperature(v, m))
+    kb = ustrip(CONSTANTS.kb)
+    N = length(m)
+    NoseHooverThermostat(temperature, abs(T1-temperature)*kb*3N*coupling, 0.0)
+end
+
+function NoseHooverThermostat(temperature::Real, Q::Real)
+    NoseHooverThermostat(temperature, Q, 0.0)
+end
+
+function Base.show(stream::IO, thermo::NoseHooverThermostat)
+    println(stream, "Nose-Hoover thermostat:")
+    println(stream, "  Temperature: $(thermo.T0)")
+    println(stream, "  Q: $(thermo.Q) steps")
+end
+
+@inline function MDBase.ddu!(dv, v, u, params, t, thermo::NoseHooverThermostat)
+    N = params.S.N
+    m = params.S.sim.mass
+    ∂ζ = ( first(sum(v.^2, dims=1)*m) - (3N+1)*params.S.kb*thermo.T0 )/2thermo.Q
+    thermo.ζ += ∂ζ*params.S.sim.Δτ
+    dv .-= thermo.ζ*v
+end
+
+#######################################################
+# <<<<<<< NoseHoover thermostat                       #
+#######################################################

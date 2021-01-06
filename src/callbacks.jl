@@ -16,7 +16,7 @@ function savethermo_affect_f!(params, ensemble)
             v = integrator.u.x[1]
             N = params.S.N
             n = fld(params.M.step, params.S.sim.thermo_save_every) + 1
-            params.S.others.thermo_vals[3][n] = get_potential_energy(v, x, params, params.S.sim)
+            params.S.others.thermo_vals[3][n] = get_potential_energy(v, x, params)
             params.S.others.thermo_vals[1][n] = params.M.ke
             params.S.others.thermo_vals[2][n] = params.M.Temperature
             if params.S.verbose
