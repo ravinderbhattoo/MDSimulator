@@ -27,7 +27,7 @@ R = min(2.5σpot, sqrt(3)/2*L)
 interatomic_potentials = [LennardJonesParameters(ϵ, σpot, R)]
 
 # Define simulation object
-sim = MDSimulator.MDSim(u0, v0, mass, interatomic_potentials, boundary_condition, true; Δτ = Δτ, save_every = 50, thermo_save_every = 10, max_neighs_hard_set=200, reneighboring_every=100,)
+sim = MDSimulator.SimInfo(u0, v0, mass, interatomic_potentials, boundary_condition, true; Δτ = Δτ, save_every = 50, thermo_save_every = 10, max_neighs_hard_set=200, reneighboring_every=100,)
 
 # Define ensemble for simulation
 ensemble = [NVT([MDSimulator.NoseHooverThermostat(600.0, sim.v0, sim.mass, coupling=500)])]

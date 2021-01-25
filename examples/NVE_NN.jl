@@ -32,7 +32,7 @@ R = min(2.5σpot, sqrt(3)/2*L)
 interatomic_potentials = [LennardJonesParameters(ϵ, σpot, R)]
 
 # Define simulation object
-sim = MDSim(u0, v0, mass, interatomic_potentials, boundary_condition, true; Δτ = Δτ, save_every = 100, thermo_save_every = 100, max_neighs_hard_set=150, reneighboring_every=1_000_000,)
+sim = SimInfo(u0, v0, mass, interatomic_potentials, boundary_condition, true; Δτ = Δτ, save_every = 100, thermo_save_every = 100, max_neighs_hard_set=150, reneighboring_every=1_000_000,)
 
 # Define ensemble
 ensemble = [NVE()]
@@ -56,7 +56,7 @@ MDSimulator.cutoff(pot::NNPair) = R
 
 θ, re = Flux.destructure(pot1.model)
 
-sim2 = MDSim(u0, v0, mass, [pot1], boundary_condition, false; Δτ = Δτ, save_every = 100, thermo_save_every = 100, max_neighs_hard_set=150, reneighboring_every=1_000_000,)
+sim2 = SimInfo(u0, v0, mass, [pot1], boundary_condition, false; Δτ = Δτ, save_every = 100, thermo_save_every = 100, max_neighs_hard_set=150, reneighboring_every=1_000_000,)
 # parameters2 = MDSimulator.exe_at_start(sim2, 10000, false)
 
 sim2.interatomic_potentials[1] = pot1

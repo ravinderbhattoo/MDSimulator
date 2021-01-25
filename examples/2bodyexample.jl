@@ -1,7 +1,6 @@
 # Imports
 
 using MDSimulator
-using ParticlesMesh
 using Plots
 using LinearAlgebra
 using ForwardDiff
@@ -12,9 +11,22 @@ T = 100.0u"K"
 m = 39.95u"g/mol"
 n = 3
 N = n^3
-L = uconvert(UNITS.distance, 1.2*n*1u"Å")*5
+L = uconvert(UNITS.distance, 1.2*n*1u"Å")*3
 Δτ = 1.0u"fs"
-u0 = L*rectangular([1/n, 1/n, 1/n],[n, n, n])
+
+function rec_grid_(n)
+    out = zeros(3, n^3)
+    for i in 1:n
+        for j in 1:n
+            for k in 1:n
+                out[:,i + (j-1)*n + (k-1)*n^2] = [i/n, j/n, k/n]
+            end
+        end
+    end
+    out
+end
+
+u0 = L*rec_grid_(n)
 v0 = 0u0/1u"fs"
 v0 = maxwell_boltzmann_velocity(N, 100u"K", m)
 
@@ -29,7 +41,7 @@ interatomic_potentials = [LennardJonesParameters([1], [100], [R/1unit(R)])]
 
 u0[1,2] += 0.01u"pm"
 # Define simulation object
-sim = MDSimulator.MDSim(u0, v0, mass, interatomic_potentials, boundary_condition, false ; Δτ = Δτ, save_every = 100, thermo_save_every = 100, max_neighs_hard_set=150, reneighboring_every=100)
+sim = MDSimulator.SimInfo(u0, v0, mass, interatomic_potentials, boundary_condition, false ; Δτ = Δτ, save_every = 100, thermo_save_every = 100, max_neighs_hard_set=150, reneighboring_every=100)
 
 # Define ensemble
 ensemble = [NVE()]
@@ -91,7 +103,7 @@ MDBase.get_acceleration(1ustrip(v0), 1ustrip(u0), parameters)
 ip.acceleration(1ustrip(v0), 1ustrip(u0))
 
 # Define simulation object
-sim2 = MDSimulator.MDSim(u0, v0, mass, [ip], boundary_condition, false ; Δτ = Δτ, save_every = 10, thermo_save_every = 10, max_neighs_hard_set=150, reneighboring_every=9999999999)
+sim2 = MDSimulator.SimInfo(u0, v0, mass, [ip], boundary_condition, false ; Δτ = Δτ, save_every = 10, thermo_save_every = 10, max_neighs_hard_set=150, reneighboring_every=9999999999)
 
 # Define ensemble
 ensemble = [NVE()]

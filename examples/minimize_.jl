@@ -24,7 +24,7 @@ R = min(2.5σpot, sqrt(3)/2*L)
 interatomic_potentials = [LennardJonesParameters(ϵ, σpot, R)]
 
 # Define simulation object
-sim = MDSim(u0, v0, mass, interatomic_potentials, boundary_condition, true; Δτ = Δτ, save_every = 1000, thermo_save_every = 1000, max_neighs_hard_set=150, reneighboring_every=100,)
+sim = SimInfo(u0, v0, mass, interatomic_potentials, boundary_condition, true; Δτ = Δτ, save_every = 1000, thermo_save_every = 1000, max_neighs_hard_set=150, reneighboring_every=100,)
 
 # Define ensemble for simulation
 ensemble = [NVE()]
