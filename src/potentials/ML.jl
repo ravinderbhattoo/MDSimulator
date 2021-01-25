@@ -52,26 +52,37 @@ struct Lagrangian <: MLModelPotential
     acceleration
     energy
     function Lagrangian(𝐿, 𝐷)
-        ∇ₓ(ẋ, x) = ForwardDiff.gradient((x) -> 𝐿(ẋ, x), x)
+        ∇ₓ!(out, ẋ, x) = ForwardDiff.gradient!(out, (x) -> 𝐿(ẋ, x), x)
+        ∇ₓ̇!(out, ẋ, x) = ForwardDiff.gradient!(out, (ẋ) -> 𝐿(ẋ, x), ẋ)
         ∇ₓ̇(ẋ, x) = ForwardDiff.gradient((ẋ) -> 𝐿(ẋ, x), ẋ)
-        ∇ₓ̇𝐷(ẋ, x) = ForwardDiff.gradient((ẋ) -> 𝐷(ẋ, x), ẋ)
-        ∇ₓ̇ᵀ(ẋ, x) = transpose(∇ₓ̇(ẋ, x))
-        ∇ₓ̇∇ₓ̇ᵀ(ẋ, x) = ForwardDiff.jacobian((ẋ) -> ∇ₓ̇ᵀ(ẋ, x), ẋ)
-        ∇ₓ∇ₓ̇ᵀ(ẋ, x) = ForwardDiff.jacobian((x) -> ∇ₓ̇ᵀ(ẋ, x), x)
+        ∇ₓ̇𝐷!(out, ẋ, x) = ForwardDiff.gradient!(out, (ẋ) -> 𝐷(ẋ, x), ẋ)
+        ∇ₓ̇ᵀ!(out, ẋ, x) = transpose(∇ₓ̇!(out, ẋ, x))
+        ∇ₓ̇ᵀ(ẋ, x) = ∇ₓ̇(ẋ, x)
+        ∇ₓ̇∇ₓ̇ᵀ!(out, ẋ, x) = ForwardDiff.jacobian!(out, (ẋ) -> ∇ₓ̇ᵀ(ẋ, x), ẋ)
+        ∇ₓ∇ₓ̇ᵀ!(out, ẋ, x) = ForwardDiff.jacobian!(out, (x) -> ∇ₓ̇ᵀ(ẋ, x), x)
         function acc(ẋ, x)
-            q̈ = 0*x
             N = size(x, 2)
-            A_ = ForwardDiff.jacobian((ẋ) -> ∇ₓ̇(ẋ, x), ẋ)
-            C_ = ForwardDiff.jacobian((x) -> ∇ₓ̇(ẋ, x), x)
-            B_ = ∇ₓ(ẋ, x)
-            D_ = ∇ₓ̇𝐷(ẋ, x)
-            A(i) = A_[3i-2:3i,3i-2:3i]
-            C(i) = C_[3i-2:3i,3i-2:3i]
-            B(i) = B_[:,i]
-            D(i) = D_[:,i]
-            for i in 1:N
-                q̈[:,i] .= inv(A(i))*(B(i) - D(i) - C(i)*ẋ[:,i])
+            q̈ = similar(x)
+            A_ = rand(3N, 3N)
+            B_ = similar(x)
+            C_ = rand(3N, 3N)
+            D_ = similar(x)
+            ∇ₓ̇∇ₓ̇ᵀ!(A_, ẋ, x)
+            ∇ₓ!(B_, ẋ, x)
+            ∇ₓ∇ₓ̇ᵀ!(C_, ẋ, x)
+            ∇ₓ̇𝐷!(D_, ẋ, x)
+            function f(A_, B_, C_, D_, N, ẋ, q̈)
+                A(i) = @view A_[3i-2:3i,3i-2:3i]
+                C(i) = @view C_[3i-2:3i,3i-2:3i]
+                B(i) = @view B_[:,i]
+                D(i) = @view D_[:,i]
+                E(i) = @view ẋ[:,i]
+                for i in 1:N
+                    q̈[:,i] .= inv(A(i))*(B(i) - D(i) - C(i)*E(i))
+                end
+                return q̈
             end
+            f(A_, B_, C_, D_, N, ẋ, q̈)
             return q̈
         end
         new(𝐿, acc, 𝐿)

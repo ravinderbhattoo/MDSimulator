@@ -49,14 +49,14 @@ end
 function Base.show(stream::IO, pp::T) where T<: PairPotential
     type_ = split(split(string(T), "{")[1],".")[end]
     println(stream, type_, ":")
-    println(stream, "\t",potential_expression(pp), " where")
+    print(stream, potential_expression(pp), " where")
     function preetify(symb)
         obj = getproperty(pp, symb)
-        print(stream, "\t",symb,"(",unit(obj),"):\t")
+        println(stream, "↪",symb,"(",unit(obj),"):")
         show(stream, 1ustrip(obj))
-        println(stream)
     end
     for i in fieldnames(typeof(pp))
+        println(stream, "")
         preetify(i)
     end
 end

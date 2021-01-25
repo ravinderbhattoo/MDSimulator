@@ -10,7 +10,8 @@ mutable struct _UNITS
     acceleration
     mass
     temperature
-    _UNITS(;energy=u"kJ/mol", distance=u"pm", time=u"fs", mass=u"g/mol", temperature=u"K") = new(energy, energy/distance, distance, time, distance/time, distance/time^2, mass, temperature)
+    density
+    _UNITS(;energy=u"kJ/mol", distance=u"pm", time=u"fs", mass=u"g/mol", temperature=u"K", density=u"g/mol/pm/pm/pm") = new(energy, energy/distance, distance, time, distance/time, distance/time^2, mass, temperature, density)
 end
 
 UNITS = _UNITS()

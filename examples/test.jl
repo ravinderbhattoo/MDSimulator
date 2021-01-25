@@ -1,27 +1,18 @@
-f1(x, i) = i%2==0 ? x^3 + x^2 + x + 1/x : x
-@inline f1_in(x, i) = i%2==0 ? x^3 + x^2 + x + 1/x : x
-
-f2(x, i) = i%2==0 ? x^3 + x^2 + x + 1/x : x
-@inline f2_in(x, i) = i%2==0 ? x^3 + x^2 + x + 1/x : x
-
-
-function f3(x)
-    s = 0.0
-    for i in 1:100000000
-        s += f1(x, i) + f2(x, i)
-    end
-    return s
+function grd(f, x)
+    y, back = Zygote.pullback(f, x)
+    back(1)
 end
 
-function f3_in(x)
-    s = 0.0
-    for i in 1:100000000
-        s += f1_in(x, i) + f2_in(x, i)
+function jac(f, x)
+    y = f(x)
+    etype_ = eltype(promote(y[1], x[1])[1])
+    # G = Zygote.Buffer([etype_(1)], length(y), length(x))
+    A = zeros(length(y), length(x))
+    for i in 1:length(y)
+        @show i
+        y_, back = Zygote.pullback((x) -> f(x)[i], x)
+        @show back(1)
+        A[i,:] .= reshape(back(1)[1], (:))
     end
-    return s
+    A
 end
-
-
-
-@code_native f3(2.0)
-@code_native f3_in(2.0)

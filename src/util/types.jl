@@ -1,9 +1,9 @@
 # export
 export SymMat
 
-struct SymMat  
-    x::AbstractArray{T1,N1} where {T1,N1} 
-    s::Int64 
+struct SymMat
+    x::AbstractArray{T1,N1} where {T1,N1}
+    s::Int64
     function SymMat(x)
         n = length(x)
         s = convert(Int64, sqrt((8n + 1)/4) - 1/2)
@@ -12,37 +12,37 @@ struct SymMat
 end
 
 function Base.show(stream::IO, a::SymMat)
-    println(stream, "Symmetric Matrix: ")
+    println(stream, "Symmetric Matrix: $(a.s)x$(a.s)")
     indi = 0
     while indi<a.s
-        indi += 1
         indj = 0
+        indi += 1
         while indj<a.s
             indj += 1
-            if indi==4
+            if indi==4 && a.s>7
                 if indj!=4
                     print(stream, "⦙", "\t")
                 else
                     print(stream, "⋱", "\t")
                 end
                 if indj==a.s
-                    indi = a.s-3                
+                    indi = a.s-3
                 end
             elseif indi>=indj
-                if indj!=4
-                    print(stream, a[indi, indj], "\t")
-                else
+                if indj==4 && a.s>7
                     print(stream, "…", "\t")
+                else
+                    print(stream, a[indi, indj], "\t")
                 end
             else
-                if indj!=4
-                    print(stream, "⦿", "\t")
-                else
+                if indj==4 && a.s>7
                     print(stream, "…", "\t")
+                else
+                    print(stream, "⦿", "\t")
                 end
             end
+            if indj==a.s println(stream, "") end
         end
-        println(stream, "")
     end
 end
 
@@ -69,7 +69,7 @@ function Base.getindex(a::SymMat, i::Int64, j::Int64)
         if j==1
             return a.x[i]
         end
-        if i<j 
+        if i<j
             return a.x[convert(Int64, a.s*(i-1) - (i-2)*(i-1)/2 +  j - (i-1))]
         else
             return a.x[convert(Int64, a.s*(j-1) - (j-2)*(j-1)/2 +  i - (j-1))]
@@ -110,7 +110,7 @@ function Base.setindex!(a::SymMat, X, i::Int64, j::Int64)
         if j==1
             a.x[i] = X
         end
-        if i<j 
+        if i<j
             a.x[convert(Int64, a.s*(i-1) - (i-2)*(i-1)/2 +  j - (i-1))] = X
         else
             a.x[convert(Int64, a.s*(j-1) - (j-2)*(j-1)/2 +  i - (j-1))] = X
@@ -120,12 +120,12 @@ function Base.setindex!(a::SymMat, X, i::Int64, j::Int64)
     end
 end
 
-macro definemath(T)
+macro definemath(T, x)
     fs = [:-, :+, :exp, :sin, :cos, :tan, :log, :log10, :log2, :abs, :abs2]
     for f in fs
         eval(quote
-            function Base.$f(a::$T)  
-                $T(Base.$f.(a.x))
+            function Base.$f(a::$T)
+                $T(Base.$f.(getproperty(a, $x)))
             end
         end)
     end
@@ -134,20 +134,20 @@ macro definemath(T)
     for r in arth
         eval(quote
             function Base.$r(a::$T, n::Number)
-                $T(Base.$r.(a.x, n))
+                $T(Base.$r.(getproperty(a, $x), n))
             end
             function Base.$r(n::Number, a::$T)
-                $T(Base.$r.(n, a.x))
+                $T(Base.$r.(n, getproperty(a, $x)))
             end
             function Base.$r(a::$T, b::$T)
-                $T(Base.$r.(a.x, b.x))
+                $T(Base.$r.(getproperty(a, $x), getproperty(b, $x)))
             end
         end
         )
     end
 end
 
-@definemath SymMat
+@definemath SymMat :x
 
 Unitful.unit(a::SymMat) = Unitful.unit(a.x)
 Unitful.ustrip(a::SymMat) = SymMat(1Unitful.ustrip(a.x))

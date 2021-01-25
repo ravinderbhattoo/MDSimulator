@@ -2,27 +2,33 @@
 export minimize
 
 function Base.show(stream::IO, sim::T) where T <: MDSim
-    println(stream, ">>>>>>>>>>> Simulation Parameters")
+    println(stream, "Simulation Parameters:")
     println(stream, "Units:")
     for f in fieldnames(MDSimulator._UNITS)
         print(stream, "\t$(f):")
         println(stream, "\t$(getproperty(UNITS,f))")
     end
-    println(stream, "Boundary condition:")
+    println(stream, "\nBoundary condition:")
     println(stream, "\t x-direction :\t$(sim.boundary_condition.X)")
     println(stream, "\t y-direction :\t$(sim.boundary_condition.Y)")
     println(stream, "\t z-direction :\t$(sim.boundary_condition.Z)")
-    println(stream, "Time step (Δτ): $(sim.Δτ)")
-    println(stream, "Max. neighbors: $(max(sim.others.max_neighs,sim.others.max_neighs_hard_set))")
-    println(stream, "Reneighboring every $(sim.others.reneighboring_every) steps")
     println(stream, "Output:")
-    println(stream, "\tLocal (Per atom) save every:\t$(sim.save_every)×Δτ")
-    println(stream, "\tthermo (system average) save every:\t$(sim.thermo_save_every)×Δτ")
-    println(stream, "Interactions:")
-    for (ind, pot) in enumerate(sim.interatomic_potentials)
-        print(stream, "$ind. $(pot)")
+        println(stream, "\tLocal (Per atom) save every:\t$(sim.save_every)×Δτ")
+        println(stream, "\tthermo (system average) save every:\t$(sim.thermo_save_every)×Δτ")
+    println(stream, "\nInteractions:")
+    for (ind, pots) in enumerate(sim.interatomic_potentials)
+        println(stream, "$ind ", supertype(typeof(pots[1])), "\t→\t")
+        for (ind2, pot) in enumerate(pots)
+            println(stream, "\n", "$ind.$ind2 ", pot)
+        end
     end
-    println(stream, "<<<<<<<<<<< Simulation Parameters")
+
+    println(stream, "\nOthers:")
+    println(stream, "\tTime step (Δτ): $(sim.Δτ)")
+    println(stream, "\tMax. neighbors: $(max(sim.others.max_neighs,sim.others.max_neighs_hard_set))")
+    println(stream, "\tReneighboring every: $(sim.others.reneighboring_every) steps")
+
+    println(stream, "")
 end
 
 struct NeighParams{I <: IntType} <: AbstractMDParams
@@ -56,10 +62,10 @@ function MDSim(u0, v0, mass, interatomic_potentials, boundary_condition, verify_
     MDSim(u0, v0, mass, interatomic_potentials, boundary_condition; a_ids = a_ids, m_ids = m_ids, Δτ = Δτ, save_every = save_every, thermo_save_every = thermo_save_every, others=others)
 end
 
-function problem(n::Int64, sim::MDSim, ensemble::Array{<:Ensemble, 1}; callbacks::Array{Function,1}=Function[], verbose::Bool=false)
+function problem(n::Int64, sim::MDSim, ensemble::Array{<:Ensemble, 1}; callbacks::Array{Function,1}=Function[], verbose::Bool=false, cthermo=Dict{String, Function}())
     tspan = (0.0*sim.Δτ, n*sim.Δτ)
-    params = exe_at_start(n, sim, verbose)
-    print_thermo_at_start(params, sim, verbose)
+    params = exe_at_start(n, sim, verbose, cthermo)
+    print_thermo_at_start(params, verbose)
 
     function SOODE(dv, v, u, p, t)
         fill!(dv, 0.0)
@@ -75,10 +81,11 @@ function problem(n::Int64, sim::MDSim, ensemble::Array{<:Ensemble, 1}; callbacks
     return prob, sim.Δτ, tspan[1]:sim.save_every*sim.Δτ:tspan[2], params
 end
 
-function simulate(n::Int64, sim::MDSim, ensemble::Array{<:Ensemble, 1}; callbacks=Function[], verbose::Bool=false, kwargs...)
-    prob, dt, saveat, params = MDSimulator.problem(n, sim, ensemble, callbacks=callbacks, verbose=verbose)
+function simulate(n::Int64, sim::MDSim, ensemble::Array{<:Ensemble, 1}; callbacks=Function[], verbose::Bool=false, cthermo=Dict{String, Function}(), kwargs...)
+    prob, dt, saveat, params = MDSimulator.problem(n, sim, ensemble, callbacks=callbacks, verbose=verbose, cthermo=cthermo)
     sol = MDBase.solve(prob, MDBase.VelocityVerlet(), dt=sim.Δτ, saveat=saveat, kwargs...)
     params.M.step = 0
+    (sol.retcode)
     return sol, params
 end
 
@@ -92,25 +99,33 @@ function minimize(sim::MDSim; kwargs...)
 end
 
 
-function MDBase.integrator(n::Int64, sim::MDSim, ensemble::Array{<:Ensemble, 1}; cbs=Function[], verbose::Bool=false)
-    prob, dt, saveat, params = problem(n, sim, ensemble, callbacks=cbs, verbose=verbose)
+function MDBase.integrator(n::Int64, sim::MDSim, ensemble::Array{<:Ensemble, 1}; callbacks=Function[], verbose::Bool=false, cthermo=Dict{String, Function}())
+    prob, dt, saveat, params = problem(n, sim, ensemble, callbacks=callbacks, verbose=verbose, cthermo=cthermo)
     return MDBase.init(prob, MDBase.VelocityVerlet(), dt=dt), params
+end
+
+struct ThermoVals
+    custom::Dict{String,Array{Float64,1}}
+    temp::Array{Float64, 1}
+    pe::Array{Float64, 1}
+    ke::Array{Float64, 1}
 end
 
 struct Neighbours{F <: FloatType, I <: IntType} <: AbstractMDParams
     neighs::Array{I, 2}
     cut_dist::F
-    thermo_vals::Array{Array{F,1} ,1}
+    thermo_vals::ThermoVals
 end
 
 struct StaticParams{I <: IntType, SimObj <: AbstractSimObj, F <: FloatType} <: AbstractMDParams
     @SParams_generic_fields
     others::Neighbours
     verbose::Bool
+    cthermo::Dict{String, Fun} where Fun<:Function
 end
 
 
-function exe_at_start(n::Types.I, sim::MDSim, verbose::Bool)
+function exe_at_start(n::Types.I, sim::MDSim, verbose::Bool, cthermo)
     ux = @view sim.u0[1, :]
     uy = @view sim.u0[2, :]
     uz = @view sim.u0[3, :]
@@ -131,7 +146,11 @@ function exe_at_start(n::Types.I, sim::MDSim, verbose::Bool)
     end
 
     nn = fld(n, sim.thermo_save_every) + 1
-    thermo_vals = [zeros(nn), zeros(nn), zeros(nn)]
+    custom = Dict{String, Array{Float64,1}}()
+    for key in keys(cthermo)
+        custom[key] = zeros(nn)
+    end
+    thermo_vals = ThermoVals(custom, zeros(nn), zeros(nn), zeros(nn))
 
     others = Neighbours(neighs, cut_dist, thermo_vals)
 
@@ -141,25 +160,25 @@ function exe_at_start(n::Types.I, sim::MDSim, verbose::Bool)
     mf_acc = unit_factor(UNITS.acceleration, UNITS.force/UNITS.mass)
     kb = 1ustrip(CONSTANTS.kb)
 
-
-    S = StaticParams(N, sim, kb, mf_acc, acc, others, verbose)
+    S = StaticParams(N, sim, kb, mf_acc, acc, others, verbose, cthermo)
     M = MParams(Types.I(0), Types.F(0), Types.F(0),)
 
     M.ke = 0.5sum( @. sim.mass*(vx^2 + vy^2 + vz^2) )
-    S.others.thermo_vals[1][1] = M.ke
-    M.Temperature = 2S.others.thermo_vals[1][1]/(3N*kb)
-    S.others.thermo_vals[2][1] = M.Temperature
+    S.others.thermo_vals.ke[1] = M.ke
+    M.Temperature = 2S.others.thermo_vals.ke[1]/(3N*kb)
+    S.others.thermo_vals.temp[1] = M.Temperature
     return MDParams(S, M)
 end
 
-function print_thermo_at_start(params, sim::MDSim, verbose::Bool)
-    params.S.others.thermo_vals[3][1] = get_potential_energy(sim.v0, sim.u0, params)
+function print_thermo_at_start(params, verbose::Bool)
+    thermo_vals = params.S.others.thermo_vals
+    thermo_vals.pe[1] = get_potential_energy(params.S.sim.v0, params.S.sim.u0, params)
+    for (k, v) in thermo_vals.custom
+        v[1] = params.S.cthermo[k](params.S.sim.v0, params.S.sim.u0, params)
+    end
+
     if verbose
-        pe = params.S.others.thermo_vals[3][1]
-        ke = params.S.others.thermo_vals[1][1]
-        T = params.S.others.thermo_vals[2][1]
-        te = ke+pe
-        sig = 4
-        println("Time: 1×Δτ\tKE: ", round(ke, sigdigits=sig), "\tTemp: ", round(T, sigdigits=sig), "\tPE: ", round(pe, sigdigits=sig), "\tTE: ", round(te, sigdigits=sig))
+        thermo_headers()
+        thermo_print(params.S.others.thermo_vals, 1)
     end
 end

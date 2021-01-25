@@ -88,7 +88,7 @@ end
 function Base.show(stream::IO, thermo::NoseHooverThermostat)
     println(stream, "Nose-Hoover thermostat:")
     println(stream, "  Temperature: $(thermo.T0)")
-    println(stream, "  Q: $(thermo.Q) steps")
+    println(stream, "  Q: $(thermo.Q)")
 end
 
 @inline function MDBase.ddu!(dv, v, u, params, t, thermo::NoseHooverThermostat)

@@ -15,12 +15,16 @@ function savethermo_affect_f!(params, ensemble)
             x = integrator.u.x[2]
             v = integrator.u.x[1]
             N = params.S.N
+            thermo_vals = params.S.others.thermo_vals
             n = fld(params.M.step, params.S.sim.thermo_save_every) + 1
-            params.S.others.thermo_vals[3][n] = get_potential_energy(v, x, params)
-            params.S.others.thermo_vals[1][n] = params.M.ke
-            params.S.others.thermo_vals[2][n] = params.M.Temperature
+            thermo_vals.pe[n] = get_potential_energy(v, x, params)
+            thermo_vals.ke[n] = params.M.ke
+            thermo_vals.temp[n] = params.M.Temperature
+            for (key, val) in thermo_vals.custom
+                val[n] = params.S.cthermo[key](v, x, params)
+            end
             if params.S.verbose
-                println("Time: ", params.M.step, "×Δτ\tKE: ", round(params.S.others.thermo_vals[1][n], sigdigits=3), "\tTemp: ", round(params.S.others.thermo_vals[2][n], sigdigits=3), "\tPE: ", round(params.S.others.thermo_vals[3][n], sigdigits=3), "\tTE: ", round(params.S.others.thermo_vals[3][n]+params.S.others.thermo_vals[1][n], sigdigits=3))
+                thermo_print(thermo_vals, n)
             end
             nothing
         end
