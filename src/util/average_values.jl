@@ -6,11 +6,11 @@ function get_temperature(v::Array{T1,2}, m::Array{T2, 1}) where {T1, T2}
     return 2ke/(3N*CONSTANTS.kb)
 end
 
-function get_temperature(ke::Number, N::Int)
+function get_temperature(ke::Number, N::Int64)
     return 2ke/(N*CONSTANTS.kb)
 end
 
-function maxwell_boltzmann_velocity(N, T, m)
+function maxwell_boltzmann_velocity(N::Int64, T::Number, m::Number)
     v_dev = uconvert(UNITS.velocity, sqrt(CONSTANTS.kb * T / m))
     v0x = v_dev*randn((1,N))
     v0y = v_dev*randn((1,N))

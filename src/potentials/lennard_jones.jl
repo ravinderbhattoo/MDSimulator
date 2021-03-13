@@ -67,8 +67,8 @@ function LennardJonesParameters(ϵ::Number, σ::Number, R::Number; ids=nothing)
     LennardJonesParameters([ϵ], [σ], [R], ids=ids)
 end
 
-function LennardJonesParameters()
-    LennardJonesParameters(1.0u"kJ/mol", 1.0u"pm", 2.5u"pm", ids=nothing)
+function LennardJonesParameters(;ϵ=1.0u"kJ/mol", σ= 100.0u"pm", R=250.0u"pm", ids=nothing)
+    LennardJonesParameters(ϵ, σ, R, ids=ids)
 end
 
 function Base.similar(lj::LennardJonesParameters, args)

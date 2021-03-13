@@ -78,7 +78,7 @@ struct Lagrangian <: MLModelPotential
                 D(i) = @view D_[:,i]
                 E(i) = @view ẋ[:,i]
                 for i in 1:N
-                    q̈[:,i] .= inv(A(i))*(B(i) - D(i) - C(i)*E(i))
+                    q̈[:,i] .= inv(A(i)+1.0e-10*I(3))*(B(i) - D(i) - C(i)*E(i))
                 end
                 return q̈
             end

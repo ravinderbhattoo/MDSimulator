@@ -45,7 +45,7 @@ function plot_energy(res::MDBase.ODESolution, params; E=["PE", "KE", "TE"], step
     fig
 end
 
-function plot_temperature(res::MDBase.ODESolution, params)
+function plot_temperature(res::MDBase.ODESolution, params; steps=0)
 
     # extract thermo values
     KE, temp, PE = summary_(params)
@@ -53,6 +53,12 @@ function plot_temperature(res::MDBase.ODESolution, params)
     # calculate time of simulation
     N = length(KE)
     t = res.t[1]:res.t[end]/(N-1):res.t[end]
+
+    # plot only n steps
+    if steps!=0 && steps<N
+        temp = temp[1:steps]
+        t = t[1:steps]
+    end
 
     # plot
     fig = plot(t, [ustrip(i) for i in temp], label="Temperature")

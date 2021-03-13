@@ -1,5 +1,5 @@
 # export
-export SymMat
+export SymMat, DumpArray, nyuntam, dump2disk!
 
 struct SymMat
     x::AbstractArray{T1,N1} where {T1,N1}
@@ -151,4 +151,158 @@ end
 
 Unitful.unit(a::SymMat) = Unitful.unit(a.x)
 Unitful.ustrip(a::SymMat) = SymMat(1Unitful.ustrip(a.x))
+
+
+
+# =======================
+# DumpArray dumps data to file and offset array
+
+mutable struct DumpArray{T,N} <: AbstractArray{T,N}
+    x::AbstractArray{T,N}
+    offset::Int64
+    dumpfile::String
+    dumpable::Bool
+end
+
+function Base.show(stream::IO, x::DumpArray)
+    s = size(x)
+    print(join(s[1:end-1], "x"));print("x($(s[end]-x.offset+1):$(s[end]))"); println(" DumpArray{$(eltype(x)),$(length(s))}:")
+    println(stream, "Dump file: ",x.dumpfile)
+    println(stream, "Dumpable: ",x.dumpable)
+    println(stream, "Offset: ",x.offset)
+    display(x.x)
+end
+
+function Base.display(x::DumpArray)
+    Base.show(x)
+end
+
+function DumpArray(args...; len=1000, offset=0, dumpfile="temp_dump_array", dumpable=true)
+    x = zeros(args..., len)
+    DumpArray(x, offset, dumpfile, dumpable)
+end
+
+function DumpArray(dtype::DataType, args...; len=1000, offset=0, dumpfile="temp_dump_array", dumpable=true)
+    x = zeros(dtype, args..., len)
+    DumpArray(x, offset, dumpfile, dumpable)
+end
+
+Base.length(a::DumpArray) = prod(Base.size(a))
+Base.size(a::DumpArray) = (Base.size(a.x)[1:end-1]..., Base.size(a.x)[end] + a.offset)
+Base.firstindex(a::DumpArray, i::Int64) = nyuntam(a)[i]
+
+function Base.to_indices(a::DumpArray, I::Tuple)
+    I_ = []
+    for (i,ind) in zip(I, 1:length(I))
+        if typeof(i)==Colon
+            push!(I_, nyuntam(a)[ind]:lastindex(a, ind))
+        else
+            push!(I_, i)
+        end
+    end
+    return (I_...,)
+end
+
+function Base.axes(A::DumpArray)
+    Base.@_inline_meta
+    (map(Base.OneTo, Base.size(A)[1:end-1])..., nyuntam(A)[end]:Base.size(A)[end])
+end
+
+
+
+nyuntam(a::DumpArray) = ((1 for i in 1:length(size(a))-1)..., a.offset+1)
+unavailabel(a::DumpArray) = (size(a)[1:end-1]..., a.offset)
+Base.iterate(a::DumpArray) = Base.iterate(a.x)
+Base.iterate(a::DumpArray, state::Int64) = Base.iterate(a.x, state)
+
+function Base.getindex(a::DumpArray, n::Int64)
+    un = unavailabel(a)
+    p = prod(un)
+    if n>p
+        n = n - p
+        Base.getindex(a.x, n)
+    else
+        error("Index not available. It has been dumped( <= $(unavailabel(a)) or <= $p).")
+    end
+end
+
+function Base.setindex!(a::DumpArray, X, n::Int64)
+    un = unavailabel(a)
+    p = prod(un)
+    if n>p
+        n = n - p
+        Base.setindex!(a.x, X, n)
+    else
+        error("Index not available. It has been dumped( <= $(unavailabel(a)) or <= $p).")
+    end
+end
+
+
+function Base.getindex(a::DumpArray, I::Int64...)
+    s = size(a)
+    nyun = nyuntam(a)
+    bool = true
+    for (i, j, k) in zip(I, s, nyun)
+        bool = bool && i>=k && i<=j
+    end
+    if bool
+        return Base.getindex(a.x, I[1:end-1]..., I[end]-a.offset)
+    else
+
+        @error "Trying to access array A with size [$(prod("$i:$j, " for (i,j) in zip(nyun, s)))] at index [$(prod("$i, " for i in I))]"
+    end
+end
+
+function Base.setindex!(a::DumpArray, X, I::Int64...)
+    s = size(a)[end]
+    nyun = nyuntam(a)[end]
+    if nyun<=I[end]<=s
+        return Base.setindex!(a.x, X, I[1:end-1]..., I[end] - a.offset)
+    else
+        @error "Trying to access array A with [$(s)] on last axis at index [$(I[end])]"
+    end
+end
+
+function Base.checkbounds(a::DumpArray{<:Any,N}, I::Union{UnitRange,Int64}...) where N
+    if typeof(I[end])==Int64 && I[end]==size(a)[end]+1
+        true
+    end
+end
+
+
+# function dump2disk!(a::DumpArray)
+#     if a.dumpable
+#         nyun = nyuntam(a)
+#         s = size(a)
+#         filename = "$(a.dumpfile)_($(nyun[1]):$(s[1]),$(nyun[2]):$(s[2]))"
+#         @warn "Saving to file is not implemented yet."
+#         a.x[:,:] .= 0
+#         a.offset += size(a.x)[a.dims]
+#         nothing
+#     else
+#         error("Cannot dump data. Please set $(typeof(a)).dumpable true.")
+#     end
+# end
+#
+#
+#
+function typeheirarchy(a, n::Int64)
+    dtype = typeof(a)
+    typeheirarchy(dtype, n)
+end
+
+function typeheirarchy(dtype::DataType, n::Int64)
+    print(dtype)
+    for i in 1:n
+        print(" <: ")
+        dtype = supertype(dtype)
+        print(dtype)
+        if dtype==Any
+            break
+        end
+    end
+end
+
+
+
 #

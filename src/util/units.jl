@@ -27,9 +27,9 @@ function unit_factor(x::Unitful.Units, y::Unitful.Units)
 end
 
 function Unitful.uconvert(u::Unitful.Units, a::Array{Quantity{T,D,U},N}) where {T, D, U, N}
-    b = similar(a)
+    b = ustrip(a)*1u
     for i in 1:length(a)
-        b[i] = Unitful.uconvert(u, a[i])
+        b[i] = a[i]
     end
     b
 end

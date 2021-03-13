@@ -63,7 +63,7 @@ end
 
 function Docs.getdoc(t::T) where T <: MDSimulator.PairPotential
     type_ = split(split(string(T), "{")[1],".")[end]
-    print("PairPotential of type $(type_).
+    print(stream, "PairPotential of type $(type_).
 Potential energy function is given as:
     $(potential_expression(t))
 

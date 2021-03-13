@@ -161,7 +161,7 @@ function exe_at_start(n::Int64, sim::T, verbose::Bool, cthermo) where T <: Abstr
     kb = 1ustrip(CONSTANTS.kb)
 
     S = StaticParams(N, sim, kb, mf_acc, acc, others, verbose, cthermo)
-    M = MParams(Int64(0), Float64(0), Float64(0),)
+    M = MParams(Int64(1), Float64(0), Float64(0),)
 
     M.ke = 0.5sum( @. sim.mass*(vx^2 + vy^2 + vz^2) )
     S.others.thermo_vals.ke[1] = M.ke
