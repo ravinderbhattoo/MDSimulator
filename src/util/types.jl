@@ -2,11 +2,12 @@
 export SymMat, DumpArray, nyuntam, dump2disk!
 
 struct SymMat
-    x::AbstractArray{T1,N1} where {T1,N1}
+    x::AbstractArray{T1, N1} where {T1, N1}
     s::Int64
     function SymMat(x)
         n = length(x)
-        s = convert(Int64, sqrt((8n + 1)/4) - 1/2)
+        N  = sqrt(2*n + 0.25) - 0.5
+        s = convert(Int64, N)
         new(x, s)
     end
 end
