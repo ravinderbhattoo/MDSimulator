@@ -14,24 +14,25 @@ export MLPairPotential
 
 export NNPair
 struct NNPair <: MLPairPotential
-    model
+    energy
     force
-    function NNPair(model)
-        neg_∂U_∂x(m) = (x) -> -ForwardDiff.derivative(m(x), x)
-        new(model, SymMat(neg_∂U_∂x.(model)))
-    end
+end
+
+function NNPair(models)
+    neg_∂U_∂x(m) = (x) -> -ForwardDiff.derivative(m, x)
+    NNPair(SymMat(models), SymMat(neg_∂U_∂x.(models)))
 end
 
 function Base.show(stream::IO, pp::NNPair)
     println(stream, "NN Pair Potential:")
-    println(stream, "\tPotential Energy (𝑈) = model(x) " )
-    println(stream, "\tPotential force = -∂𝑈/∂x where" )
-    print(stream, "\tmodel:\t"); show(stream, pp.model); println(stream)
+    println(stream, "\tPotential Energy (𝑈) = model(r) where r is scalar value." )
+    println(stream, "\tPotential force = -∂𝑈/∂r where" )
+    print(stream, "\tmodel:\t"); show(stream, pp.energy); println(stream)
 end
 
 
 function potential_energy(r, pot::NNPair, pair)
-    return pot.model[pair...](r)
+    return pot.energy[pair...](r)
 end
 
 function potential_force(r, pot::NNPair, pair)
